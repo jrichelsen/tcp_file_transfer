@@ -9,12 +9,11 @@
 #ifndef TCP_SHARED_H
 #define TCP_SHARED_H
 
-#include <stdint.h> // uint16_t (port type)
+extern int DEBUG; // flag for whether to print debug statements
 
-extern int DEBUG;
-
-void debugprintf(const char * const format, ...);
-uint16_t port_string_to_uint16_t(const char * const string_value, void (* print_usage_ptr)());
-void analyze_argc(int argc, int argc_expected, void (* print_usage_ptr)());
+void analyze_argc( int argc, int argc_expected, void (* print_usage_ptr)() );
+void debugprintf( const char * const format, ... );
+void md5HashStringOfByteArray( unsigned char * byteArray, size_t len, char * * hash_str );
+ssize_t openFileToByteArray( char * filename, unsigned char * * byteArray );
 
 #endif //TCP_SHARED_H

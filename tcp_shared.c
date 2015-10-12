@@ -1,26 +1,24 @@
-#include <stdio.h> // printing to stdout and stderr
-#include <stdlib.h> // exit status
-#include <stdarg.h> // handle variable arguments for debug print
-#include <stdint.h> // uint16_t (port type)
-#include <errno.h> // error status for checking strtol
-#include <limits.h> // type limits for checking strtol
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <mhash.h>
 
 #include "tcp_shared.h"
 
-void analyze_argc(int argc, int argc_expected, void (* print_usage_ptr)())
+void analyze_argc( int argc, int argc_expected, void (* print_usage_ptr)() )
 {
     if (argc == 1) {
-        fprintf(stderr, "No command line arguments specified. Exiting now.\n");
+        fprintf(stderr, "no command line arguments specified, exiting now.\n");
         print_usage_ptr();
         exit(EXIT_FAILURE);
     } else if (argc != argc_expected) {
-        fprintf(stderr, "Incorrect number of command line arguments. Exiting now.\n");
+        fprintf(stderr, "incorrect number of command line arguments, exiting now.\n");
         print_usage_ptr();
         exit(EXIT_FAILURE);
     }
 }
 
-void debugprintf(const char * const format, ...)
+void debugprintf( const char * const format, ... )
 {
     if (!DEBUG) {
         return;
@@ -33,22 +31,35 @@ void debugprintf(const char * const format, ...)
     fprintf(stderr, "\n");
 }
 
-uint16_t port_string_to_uint16_t(const char * const string_value, void (* print_usage_ptr)())
+void md5HashStringOfByteArray( unsigned char * byteArray, size_t len, char * * hash_str )
 {
-    char * end_ptr;
-    errno = 0;
-    uint16_t long_int_value = strtol(string_value, &end_ptr, 10);
+    MHASH hash_context = mhash_init(MHASH_MD5);
+    mhash(hash_context, byteArray, len);
+    unsigned char * hash_hex = mhash_end(hash_context);
 
-    if ((errno == ERANGE && (long_int_value == LONG_MAX || long_int_value == LONG_MIN)) || (errno != 0 && long_int_value == 0)) {
-        fprintf(stderr, "Error converting port number \"%s\" to integer. Exiting now.\n", string_value);
-        print_usage_ptr();
+    int i_hash_char;
+    for (i_hash_char = 0; i_hash_char < mhash_get_block_size(MHASH_MD5); i_hash_char ++) {
+        sprintf(hash_str[i_hash_char], "%x", hash_hex[i_hash_char]);
+    }
+}
+
+ssize_t openFileToByteArray( char * filename, unsigned char * * byteArray )
+{
+    FILE * file = fopen(filename, "rb");
+    if (file == NULL) {
+        return -1;
+    }
+    fseek(file, 0, SEEK_END);
+    size_t len = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    *byteArray = NULL;
+    *byteArray = malloc(len + 1);
+    if (*byteArray == NULL) {
+        fprintf(stderr, "error allocating memory for file, exiting now\n");
         exit(EXIT_FAILURE);
     }
-    if (end_ptr == string_value || *end_ptr != '\0') {
-        fprintf(stderr, "Port numbered entered \"%s\" cannot be converted to integer. Exiting now.\n", string_value);
-        print_usage_ptr();
-        exit(EXIT_FAILURE);
-    }
-
-    return long_int_value;
+    fread(*byteArray, len, 1, file);
+    fclose(file);
+    (*byteArray)[len] = 0;
+    return len;
 }

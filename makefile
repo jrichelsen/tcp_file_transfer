@@ -1,9 +1,9 @@
 all:	tcpclient tcpserver
 
 tcpclient:		tcpclient.o tcp_shared.o
-					gcc tcpclient.o tcp_shared.o -o tcpclient
+					gcc tcpclient.o tcp_shared.o -o tcpclient -lmhash
 tcpserver:		tcpserver.o tcp_shared.o
-					gcc tcpserver.o tcp_shared.o -o tcpserver
+					gcc tcpserver.o tcp_shared.o -o tcpserver -lmhash
 
 tcpclient.o:	tcpclient.c
 					gcc -c -g -O -Wall tcpclient.c

@@ -1,4 +1,4 @@
-// Mitch Patin (???)
+// Mitch Patin (mpatin)
 // Tim Pusateri (???)
 // Jon Richelsen (jrichels)
 // CSE30264
@@ -11,31 +11,36 @@
 #include <netdb.h>
 #include <errno.h>
 #include <stdlib.h>
+// CONST POINTERS?
 
 #include "tcp_shared.h" // utility functions
 
 int DEBUG = 1; // flag for whether to print debug statements
 #define MAX_PENDING 5
 #define BUF_LEN 1000000 // length (in characters) of buffer used to receive and send messages
-#define FILENAME_BUF_LEN 1000 // length (in characters) of buffer used to store filename
+#define FILENAME_BUF_LEN 1000 // length (in characters) of buffer used to receive filename
 
-void print_usage(); // print correct command usage (arguments, etc.)
+void print_usage( ); // print correct command usage (arguments, etc.)
 
 int main( int argc, char * argv[] )
 {
     // variables and data structures
-    const char * port_str; // socket (from command line)
+    const char * port_str; // (from command line)
     struct addrinfo hints; // hints for getaddrinfo()
-    struct addrinfo * server_info_ptr; // linked list returned by getaddrinfo()
-    struct addrinfo * this_addr_ptr; // pointer to current item on server_info_ptr linked list
+    struct addrinfo * server_info_ptr = NULL; // linked list returned by getaddrinfo()
+    struct addrinfo * this_addr_ptr = NULL; // pointer to current item on server_info_ptr linked list
     const int YES = 1; // used for setsockopt()
     int socket_fd; // socket accepting connections
     int client_socket_fd; // socket for communicating with client
-    struct sockaddr_storage client_addr; // client's address
-    socklen_t addr_size = sizeof(client_addr);
-    char buf[BUF_LEN]; // buffer used to receive and send messages
-    size_t buf_size = sizeof(buf); // size of above buffer
-    char filename_buf[FILENAME_BUF_LEN]; // buffer to store filename from client
+    struct sockaddr_storage client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    unsigned char buf[BUF_LEN];
+    const size_t buf_len = sizeof(buf);
+    unsigned short int filename_len_client; // length of filename sent from client
+    char filename_buf[FILENAME_BUF_LEN];
+    const size_t filename_buf_len = sizeof(filename_buf);
+    unsigned char * byteArray = NULL; // string holding above file
+    char * hash_str; // ASCII md5 hash value
 
     // get information from command line
     analyze_argc(argc, 2, &print_usage);
@@ -50,77 +55,124 @@ int main( int argc, char * argv[] )
 
     int gai_rv;
     if ((gai_rv = getaddrinfo(NULL, port_str, &hints, &server_info_ptr)) != 0) {
-        fprintf(stderr, "error getting address information for server (self): %s\n", gai_strerror(gai_rv));
+        fprintf(stderr, "error getting address information for server (self), quitting now: %s\n", gai_strerror(gai_rv));
         exit(EXIT_FAILURE);
     }
 
     // bind to first address where binding is possible
     for (this_addr_ptr = server_info_ptr; this_addr_ptr != NULL; this_addr_ptr = this_addr_ptr->ai_next) {
         //TODO: add some cute printing
+        // create connection socket
         socket_fd = socket(this_addr_ptr->ai_family, this_addr_ptr->ai_socktype, this_addr_ptr->ai_protocol);
         if (socket_fd == -1) {
-            debugprintf("could not create socket: %s", strerror(errno));
+            debugprintf("could not create connection socket: %s", strerror(errno));
             continue;
         } else {
-            debugprintf("socket created");
+            debugprintf("connection socket created");
         }
 
+        // make connection socket reusable
         if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &YES, sizeof(const int)) == -1) {
             debugprintf("could not make socket reusable: %s", strerror(errno));
             continue;
         } else {
-            debugprintf("socket set to reusable");
+            debugprintf("connection socket set to reusable");
         }
 
+        // bind connection socket
         if (bind(socket_fd, this_addr_ptr->ai_addr, this_addr_ptr->ai_addrlen) == -1) {
-            debugprintf("could not bind to socket: %s", strerror(errno));
+            debugprintf("could not bind to connection socket: %s", strerror(errno));
             continue;
         } else {
-            debugprintf("socket bound");
+            debugprintf("connection socket bound");
         }
 
         break;
     }
 
     if (this_addr_ptr == NULL) {
-        fprintf(stderr, "failed to bind server\n");
+        fprintf(stderr, "failed to bind server socket, exiting now\n");
         exit(EXIT_FAILURE);
     }
 
     freeaddrinfo(server_info_ptr);
 
     if (listen(socket_fd, MAX_PENDING) == -1) {
-        perror("failed to listen to socket");
+        perror("failed to listen to socket, exiting now");
         exit(EXIT_FAILURE);
     }
     debugprintf("listening");
 
-    client_socket_fd = accept(socket_fd, (struct sockaddr *)&client_addr, &addr_size);
+    client_socket_fd = accept(socket_fd, (struct sockaddr *)&client_addr, &addr_len);
     if (client_socket_fd == -1) {
-        perror("failed to accept client");
+        perror("failed to accept client connection, exiting now");
         exit(EXIT_FAILURE);
     }
-    debugprintf("accepted connection");
+    debugprintf("accepted client connection");
 
     //TODO: add cute printing about client
 
+    // receive filename length from client
+    uint16_t filename_len_client_net;
+    int bytes_recvd_filename_len = recv(client_socket_fd, &filename_len_client_net, sizeof(uint16_t), 0);
+    if (bytes_recvd_filename_len == -1) {
+        perror("error receiving filename length from client, exiting now");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_recvd_filename_len != sizeof(uint16_t)) {
+        fprintf(stderr, "filename length of incorrect type, exiting now\n");
+        exit(EXIT_FAILURE);
+    }
+    filename_len_client = ntohs(filename_len_client_net);
+    debugprintf("filename length received from client: %hu", filename_len_client);
+
     // receive filename from client
-    memset(buf, 0, buf_size); // clear buffer
-    if (recv(client_socket_fd, buf, buf_size, 0) == -1) { //TODO: can we use length for anything?
-        perror("error receiving filename from client");
+    int bytes_recvd_filename = recv(client_socket_fd, filename_buf, (filename_buf_len - sizeof(char)), 0);
+    if (bytes_recvd_filename == -1) {
+        perror("error receiving filename from client, exiting now");
         exit(EXIT_FAILURE);
     }
-    if (strlen(buf) > (FILENAME_BUF_LEN - 1)) {
-        fprintf(stderr, "filename too large for filename buffer\n");
+    if (bytes_recvd_filename > filename_buf_len - sizeof(char)) {
+        fprintf(stderr, "filename too large for filename buffer, exiting now\n");
         exit(EXIT_FAILURE);
     }
-    strncpy(filename_buf, buf, strlen(buf) + 1);
+    filename_buf[FILENAME_BUF_LEN] = '\0';
     debugprintf("filename received from client: %s", filename_buf);
+
+    // ensure that filename length and length of actual filename match
+    if (filename_len_client != strlen(filename_buf)) {
+        fprintf(stderr, "filename length and filename from client do not match, exiting now\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("filename length and filename match");
+
+    // attempt to open file on local filesystem
+    size_t file_len = openFileToByteArray(filename_buf, &byteArray);
+    debugprintf("file opened to byte array, %zu bytes", file_len);
+
+    // send file length to client
+    uint16_t file_len_net = htons(file_len);
+    int bytes_sent_file_len = send(socket_fd, &file_len_net, sizeof(uint16_t), 0);
+    if (bytes_sent_file_len == -1) {
+        perror("error sending size of file to client, exiting now");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_sent_file_len != (sizeof(file_len_net))) {
+        fprintf(stderr, "error sending size of file to client: incorrect number of bytes sent, exiting now\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("file length sent to client");
+
+    if (file_len != -1) {
+        // create md5 hash of file
+        md5HashStringOfByteArray(byteArray, file_len, &hash_str);
+        debugprintf("md5 hash: %s", hash_str);
+    }
 
     exit(EXIT_SUCCESS);
 }
 
-void print_usage()
+void print_usage( )
 {
     printf("tcpserver is to be used in the following manner: \"tcpserver <PORT>\"\n");
 }
