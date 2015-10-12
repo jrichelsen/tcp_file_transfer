@@ -9,8 +9,12 @@
 #ifndef TCP_SHARED_H
 #define TCP_SHARED_H
 
+#include <stdint.h> // uint16_t (port type)
+
+extern int DEBUG;
+
 void debugprintf(const char * const format, ...);
-long int port_string_to_long_int(const char * const string_value, void (* print_usage_ptr)());
+uint16_t port_string_to_uint16_t(const char * const string_value, void (* print_usage_ptr)());
 void analyze_argc(int argc, int argc_expected, void (* print_usage_ptr)());
 
 #endif //TCP_SHARED_H
