@@ -12,11 +12,9 @@
 #include <errno.h>
 #include <stdlib.h>
 
-
 #include "tcp_shared.h" // utility functions
 
 int DEBUG = 1; // flag for whether to print debug statements
-#define BUF_LEN 1000000 // length (in characters) of buffer used to receive and send messages
 
 void print_usage( ); // print correct command usage (arguments, etc.)
 
@@ -28,12 +26,14 @@ int main( int argc, char * argv[] )
     const char * filename; // (from command line)
     unsigned short int filename_len; // length of filename string
     struct addrinfo hints; // hints for getaddrinfo()
-    struct addrinfo * server_info_ptr = NULL; // linked list returned by getaddrinfo()
-    struct addrinfo * this_addr_ptr = NULL; // pointer to current item on server_info_ptr linked list
+    struct addrinfo * server_info_ll = NULL; // linked list returned by getaddrinfo()
+    struct addrinfo * this_addr_ptr = NULL; // pointer to current item on server_info_ll linked list
     int socket_fd; // socket for communicating with server
-    unsigned char buf[BUF_LEN]; // buffer used to receive and send messages
-    const size_t buf_len = sizeof(buf); // length of above buffer
     ssize_t file_len; // length of file sent by server
+    unsigned char MD5_hash_server[16]; // array (NOT STRING) holding hex values for MD5 hash from server
+    unsigned char * file_buf = NULL; // buffer used to receive file
+    unsigned char * MD5_hash_client[16]; // pointer to array (NOT STRING) holding hex values for MD5 hash from client (self)
+    FILE * file = NULL; // file received from client
 
     // get information from command line
     analyze_argc(argc, 4, &print_usage);
@@ -52,13 +52,13 @@ int main( int argc, char * argv[] )
     hints.ai_socktype = SOCK_STREAM; // specify TCP
 
     int gai_rv;
-    if ((gai_rv = getaddrinfo(server_hostname, port_str, &hints, &server_info_ptr)) != 0) {
+    if ((gai_rv = getaddrinfo(server_hostname, port_str, &hints, &server_info_ll)) != 0) {
         fprintf(stderr, "error getting address information for server, quitting now: %s\n", gai_strerror(gai_rv));
         exit(EXIT_FAILURE);
     }
 
     // connect to first address where connecting is possible
-    for (this_addr_ptr = server_info_ptr; this_addr_ptr != NULL; this_addr_ptr = this_addr_ptr->ai_next) {
+    for (this_addr_ptr = server_info_ll; this_addr_ptr != NULL; this_addr_ptr = this_addr_ptr->ai_next) {
         //TODO: add some cute printing
         // create server socket
         socket_fd = socket(this_addr_ptr->ai_family, this_addr_ptr->ai_socktype, this_addr_ptr->ai_protocol);
@@ -85,7 +85,7 @@ int main( int argc, char * argv[] )
         exit(EXIT_FAILURE);
     }
 
-    freeaddrinfo(server_info_ptr);
+    freeaddrinfo(server_info_ll);
 
     //TODO: add cute printing about server
 
@@ -122,12 +122,58 @@ int main( int argc, char * argv[] )
         exit(EXIT_FAILURE);
     }
     if (bytes_recvd_file_len != sizeof(uint16_t)) {
-        fprintf(stderr, "file length of incorrect type, exiting now\n");
-        fprintf(stderr, "%d\n", bytes_recvd_file_len);
+        fprintf(stderr, "file length of incorrect size, exiting now\n");
         exit(EXIT_FAILURE);
     }
-    file_len = ntohs(file_len_net);
+    file_len = (ssize_t)ntohs(file_len_net);
     debugprintf("file length received from server: %zd", file_len);
+
+    // quit if file does not exist on server
+    if (file_len == -1) {
+        fprintf(stderr, "File does not exists\n");
+        exit(EXIT_SUCCESS);
+    }
+
+    // receive MD5 hash from server
+    int bytes_recvd_MD5_hash = recv(socket_fd, MD5_hash_server, 16, 0);
+    if (bytes_recvd_MD5_hash == -1) {
+        perror("error receiving MD5 hash from server, exiting now");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_recvd_MD5_hash != 16) {
+        fprintf(stderr, "MD5 hash of incorrect size, exiting now\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("MD5 hash received from server");
+
+    // receive file byte array from server
+    file_buf = (unsigned char *)malloc(file_len * sizeof(unsigned char *));
+    int bytes_recvd_file = recv(socket_fd, file_buf, file_len, 0);
+    if (bytes_recvd_file == -1) {
+        perror("error receiving file byte array from server, exiting now");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_recvd_file != file_len) {
+        fprintf(stderr, "file byte array of incorrect size, exiting now: %d\n", bytes_recvd_file);
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("file received from server");
+
+    // create MD5 hash of file
+    MD5_hash_of_byte_array(file_buf, file_len, MD5_hash_client);
+    debugprintf("MD5 hash created");
+
+    // compare MD5 hashes
+    if (cmp_MD5_hash(*MD5_hash_client, MD5_hash_server) != 0) {
+        fprintf(stderr, "File hashes do not match – bad transfer\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("MD5 hashes match"); //TODO: 
+
+    // write byte array to file
+    file = fopen("newfile", "wb");
+    fwrite(file_buf, 1, file_len, file); //return value!
+    debugprintf("file created, DONE");
 
     exit(EXIT_SUCCESS);
 }

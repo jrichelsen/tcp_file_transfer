@@ -12,8 +12,10 @@
 extern int DEBUG; // flag for whether to print debug statements
 
 void analyze_argc( int argc, int argc_expected, void (* print_usage_ptr)() );
+int cmp_MD5_hash( unsigned char MD5_hash1[16], unsigned char MD5_hash2[16] );
 void debugprintf( const char * const format, ... );
-void md5HashStringOfByteArray( unsigned char * byteArray, size_t len, char * * hash_str );
-ssize_t openFileToByteArray( char * filename, unsigned char * * byteArray );
+void MD5_hash_of_byte_array( unsigned char * byteArray, size_t len, unsigned char * MD5_hash[16] );
+int open_filename_to_byte_array( char * filename, unsigned char * * byteArray );
+void print_MD5_hash( unsigned char * MD5_hash[16] );
 
 #endif //TCP_SHARED_H

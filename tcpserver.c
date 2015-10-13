@@ -17,7 +17,6 @@
 
 int DEBUG = 1; // flag for whether to print debug statements
 #define MAX_PENDING 5
-#define BUF_LEN 1000000 // length (in characters) of buffer used to receive and send messages
 #define FILENAME_BUF_LEN 1000 // length (in characters) of buffer used to receive filename
 
 void print_usage( ); // print correct command usage (arguments, etc.)
@@ -27,20 +26,19 @@ int main( int argc, char * argv[] )
     // variables and data structures
     const char * port_str; // (from command line)
     struct addrinfo hints; // hints for getaddrinfo()
-    struct addrinfo * server_info_ptr = NULL; // linked list returned by getaddrinfo()
-    struct addrinfo * this_addr_ptr = NULL; // pointer to current item on server_info_ptr linked list
+    struct addrinfo * server_info_ll = NULL; // linked list returned by getaddrinfo()
+    struct addrinfo * this_addr_ptr = NULL; // pointer to current item on server_info_ll linked list
     const int YES = 1; // used for setsockopt()
     int socket_fd; // socket accepting connections
     int client_socket_fd; // socket for communicating with client
     struct sockaddr_storage client_addr;
     socklen_t addr_len = sizeof(client_addr);
-    unsigned char buf[BUF_LEN];
-    const size_t buf_len = sizeof(buf);
     unsigned short int filename_len_client; // length of filename sent from client
     char filename_buf[FILENAME_BUF_LEN];
     const size_t filename_buf_len = sizeof(filename_buf);
-    unsigned char * byteArray = NULL; // string holding above file
-    char * hash_str; // ASCII md5 hash value
+    unsigned char * byteArray = NULL; // byte array holding file to send to client
+    ssize_t file_len; // length of file to send to client
+    unsigned char * MD5_hash[16]; // pointer to array (NOT STRING) holding hex values for MD5 hash
 
     // get information from command line
     analyze_argc(argc, 2, &print_usage);
@@ -54,13 +52,13 @@ int main( int argc, char * argv[] )
     hints.ai_socktype = SOCK_STREAM; // specify TCP
 
     int gai_rv;
-    if ((gai_rv = getaddrinfo(NULL, port_str, &hints, &server_info_ptr)) != 0) {
+    if ((gai_rv = getaddrinfo(NULL, port_str, &hints, &server_info_ll)) != 0) {
         fprintf(stderr, "error getting address information for server (self), quitting now: %s\n", gai_strerror(gai_rv));
         exit(EXIT_FAILURE);
     }
 
     // bind to first address where binding is possible
-    for (this_addr_ptr = server_info_ptr; this_addr_ptr != NULL; this_addr_ptr = this_addr_ptr->ai_next) {
+    for (this_addr_ptr = server_info_ll; this_addr_ptr != NULL; this_addr_ptr = this_addr_ptr->ai_next) {
         //TODO: add some cute printing
         // create connection socket
         socket_fd = socket(this_addr_ptr->ai_family, this_addr_ptr->ai_socktype, this_addr_ptr->ai_protocol);
@@ -95,7 +93,7 @@ int main( int argc, char * argv[] )
         exit(EXIT_FAILURE);
     }
 
-    freeaddrinfo(server_info_ptr);
+    freeaddrinfo(server_info_ll);
 
     if (listen(socket_fd, MAX_PENDING) == -1) {
         perror("failed to listen to socket, exiting now");
@@ -147,12 +145,12 @@ int main( int argc, char * argv[] )
     debugprintf("filename length and filename match");
 
     // attempt to open file on local filesystem
-    size_t file_len = openFileToByteArray(filename_buf, &byteArray);
+    file_len = open_filename_to_byte_array(filename_buf, &byteArray);
     debugprintf("file opened to byte array, %zu bytes", file_len);
 
     // send file length to client
     uint16_t file_len_net = htons(file_len);
-    int bytes_sent_file_len = send(socket_fd, &file_len_net, sizeof(uint16_t), 0);
+    int bytes_sent_file_len = send(client_socket_fd, &file_len_net, sizeof(uint16_t), 0);
     if (bytes_sent_file_len == -1) {
         perror("error sending size of file to client, exiting now");
         exit(EXIT_FAILURE);
@@ -163,11 +161,39 @@ int main( int argc, char * argv[] )
     }
     debugprintf("file length sent to client");
 
-    if (file_len != -1) {
-        // create md5 hash of file
-        md5HashStringOfByteArray(byteArray, file_len, &hash_str);
-        debugprintf("md5 hash: %s", hash_str);
+    // quit if file does not exist
+    if (file_len == -1) {
+        debugprintf("file does not exist, exiting now");
+        exit(EXIT_SUCCESS);
     }
+
+    // create MD5 hash of file
+    MD5_hash_of_byte_array(byteArray, file_len, MD5_hash);
+    debugprintf("MD5 hash created");
+
+    // send MD5 hash to client
+    int bytes_sent_MD5_hash = send(client_socket_fd, *MD5_hash, 16, 0);
+    if (bytes_sent_MD5_hash == -1) {
+        perror("error sending MD5 hash to client");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_sent_MD5_hash != 16) {
+        fprintf(stderr, "error sending MD5 hash to client: incorrect number of bytes sent\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("MD5 hash sent to server");
+
+    // send file byte array to client
+    int bytes_sent_file = send(client_socket_fd, byteArray, file_len, 0);
+    if (bytes_sent_file == -1) {
+        perror("error sending file byte array to client");
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_sent_file != file_len) {
+        fprintf(stderr, "error sending file byte array to client: incorrect number of bytes sent\n");
+        exit(EXIT_FAILURE);
+    }
+    debugprintf("file sent to client, DONE");
 
     exit(EXIT_SUCCESS);
 }
