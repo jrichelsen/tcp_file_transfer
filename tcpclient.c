@@ -11,6 +11,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #include "tcp_shared.h" // utility functions
 
@@ -34,6 +35,8 @@ int main( int argc, char * argv[] )
     unsigned char * file_buf = NULL; // buffer used to receive file
     unsigned char * MD5_hash_client[16]; // pointer to array (NOT STRING) holding hex values for MD5 hash from client (self)
     FILE * file = NULL; // file received from client
+	struct timeval timestart; // capture time start
+	struct timeval timeend;	// capture time end
 
     // get information from command line
     analyze_argc(argc, 4, &print_usage);
@@ -45,6 +48,9 @@ int main( int argc, char * argv[] )
     debugprintf("filename argument: %s", filename);
     filename_len = strlen(filename);
     debugprintf("filename length: %hu", filename_len);
+
+	// capture start time
+	gettimeofday(&timestart, NULL);
 
     // get address of server
     memset(&hints, 0, sizeof(hints)); // clear hints
@@ -174,6 +180,13 @@ int main( int argc, char * argv[] )
     file = fopen("newfile", "wb");
     fwrite(file_buf, 1, file_len, file); //return value!
     debugprintf("file created, DONE");
+
+	// capture end time
+	gettimeofday(&timeend, NULL);
+
+	// calculate and print time difference and throughput
+	long diff_msec = timeend.tv_usec - timestart.tv_usec;
+	printf("%d bytes transferred in %lu microseconds. Throughput: %lu Megabytes/sec.\n", 0, diff_msec, 0.0);
 
     exit(EXIT_SUCCESS);
 }
