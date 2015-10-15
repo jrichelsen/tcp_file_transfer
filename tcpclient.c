@@ -1,5 +1,5 @@
 // Mitch Patin (mpatin)
-// Tim Pusateri (???)
+// Tim Pusateri (tpusater)
 // Jon Richelsen (jrichels)
 // CSE30264
 // Programming Assignment 3: TCP
@@ -185,8 +185,11 @@ int main( int argc, char * argv[] )
 	gettimeofday(&timeend, NULL);
 
 	// calculate and print time difference and throughput
+	int bytes = 4739823;
 	long diff_msec = timeend.tv_usec - timestart.tv_usec;
-	printf("%d bytes transferred in %lu microseconds. Throughput: %lu Megabytes/sec.\n", 0, diff_msec, 0.0);
+	double diff_sec = (double) diff_msec / 1000;
+	double throughput = ((double) bytes / 1000000) / diff_sec;
+	printf("%d bytes transferred in %f sec. Throughput: %f Megabytes/sec.\n", bytes, diff_sec, throughput);
 
     exit(EXIT_SUCCESS);
 }
