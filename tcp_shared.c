@@ -1,9 +1,19 @@
+// Mitch Patin (mpatin)
+// Tim Pusateri (tpusater)
+// Jon Richelsen (jrichels)
+// CSE30264
+// Programming Assignment 3: TCP
+// Shared Functions
+// Due 2015-10-15
+
 #include <stdio.h>
+#include <netdb.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <mhash.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include "tcp_shared.h"
 
@@ -45,7 +55,7 @@ void MD5_hash_of_byte_array( unsigned char * byteArray, size_t len, unsigned cha
     *MD5_hash = mhash_end(MD5_hash_context);
 }
 
-int open_filename_to_byte_array( char * filename, unsigned char * * byteArray )
+long int open_filename_to_byte_array( char * filename, unsigned char * * byteArray )
 {
     FILE * file = fopen(filename, "rb");
     if (file == NULL) {
@@ -71,5 +81,41 @@ void print_MD5_hash( unsigned char * MD5_hash[16] )
     int i_MD5_hash;
     for (i_MD5_hash = 0; i_MD5_hash < 16; i_MD5_hash++) {
         printf("%.2x", (*MD5_hash)[i_MD5_hash]);
+    }
+}
+
+void recv_bytes( int socket_fd, void * buf, size_t len, const char * const desc )
+{
+    ssize_t bytes_recvd = recv(socket_fd, buf, len, 0);
+    if (bytes_recvd == -1) {
+        fprintf(stderr, "error receiving %s\n", desc);
+        perror("exiting now");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_recvd != len) {
+        fprintf(stderr, "error receiving %s:\n", desc);
+        fprintf(stderr, "    incorrect number of bytes received, expecting %zu, received %zd\n", len, bytes_recvd);
+        fprintf(stderr, "    exiting now\n");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void send_bytes( int socket_fd, void * buf, size_t len, const char * const desc )
+{
+    ssize_t bytes_sent = send(socket_fd, buf, len, 0);
+    if (bytes_sent == -1) {
+    fprintf(stderr, "error sending %s\n", desc);
+        perror("exiting now");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+    if (bytes_sent != len) {
+        fprintf(stderr, "error sending %s:\n", desc);
+        fprintf(stderr, "    incorrect number of bytes sent, expecting %zu, sent %zd\n", len, bytes_sent);
+        fprintf(stderr, "    exiting now\n");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
     }
 }
